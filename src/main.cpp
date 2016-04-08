@@ -47,6 +47,32 @@ public:
     drawArrowAnimation();
   }
   
+//  ofQuaternion axesToQuaternion(ofPoint items[]) { //vector<string> items) { //input 6 items
+//    //ofxAssert(items.size()==6,"axesToQuaternion: should always receive 6 items, got "+ofToString(items.size()));
+//    ofQuaternion q;
+//    
+//    for (int i=0; i<3; i++) {
+//      float x = items[i].x; // .at(i)*2); // ofToFloat(items.at(i*2));
+//      float y = items[i].y; //.at(i*2+1); // ofToFloat(items.at(i*2+1));
+//      
+//      ofVec2f input(x,y);
+//      input = input.rotated(trackballs.orientation) * trackballs.speed;
+//      ofVec2f offset = ofVec2f(trackballs.offset, 0).rotated(-120 * i);
+//      ofVec2f target = offset + input.rotated(-120 * i);
+//      
+//      offset.rotate(screen.rotation); //globalOrientation);
+//      target.rotate(screen.rotation); //globalOrientation);
+//      
+//      ofVec3f from = ofxMouseToSphere(offset);
+//      ofVec3f to = ofxMouseToSphere(target);
+//      ofVec3f crossed = from.crossed(to);
+//      float dot = from.dot(to);
+//      q *= ofQuaternion(crossed.x, crossed.y, crossed.z, dot);
+//    }
+//    
+//    return q;
+//  }
+  
   void applyRotation() {
     static ofVec3f fromAxis,toAxis;
     static float fromAngle=0,toAngle;
