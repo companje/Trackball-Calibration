@@ -1,40 +1,86 @@
 #include "ofMain.h"
 #include "ofxManyMouse.h"
 
+ofVec3f ofxMouseToSphere(float x, float y) {  //-0.5 ... +0.5
+  ofVec3f v(x,y);
+  float mag = v.x*v.x + v.y*v.y;
+  if (mag>1.0f) v.normalize();
+  else v.z = sqrt(1.0f - mag);
+  return v;
+}
+
+ofVec3f ofxMouseToSphere(ofVec2f v) {  //-0.5 ... +0.5
+  return ofxMouseToSphere(v.x,v.y);
+}
+
+int localOrientation = -45; //45 //90 //same for all trackballs
+int globalOrientation = 0;
+float speed = .0005;
+
 class ofApp : public ofBaseApp, public ofxManyMouse {
 public:
   
   vector<ofPoint> history[3];
-  float trackballOrientation = 0; //45 //90;
   ofImage image;
-  struct { float radius = .44, smoothing = 1.0; ofQuaternion rotation; } globe;
+  ofPoint mouseFrom,mouseTo;
+  
   
   struct {
-    int id;
-    ofPoint value; //x,y
-  } devices[3];
+    float radius = .75;
+    float smoothing = 1.0;
+    ofQuaternion rotation;
+  } globe;
+  
+  struct Trackball {
+    int deviceId; //hardware id
+    ofVec2f value; //x,y
+    ofVec2f offset,target;
+    ofVec3f from,to;
+    ofQuaternion q;
+    int order; //0,1,2 counter clockwise?
+    
+    void update() {
+      
+      value = value.getRotated(localOrientation);
+      ofVec2f offset = ofVec2f(.7, 0).getRotated(-120 * order);
+      ofVec2f target = offset + value.getRotated(-120 * order) * speed;
+
+      offset.rotate(globalOrientation);
+      target.rotate(globalOrientation);
+
+      from = ofxMouseToSphere(offset);
+      //cout << "order: " << order << " " << "from: "<< from << endl;
+      to = ofxMouseToSphere(target);
+      ofVec3f crossed = from.getCrossed(to);
+      float dot = from.dot(to);
+      q = ofQuaternion(crossed.x, crossed.y, crossed.z, dot);
+
+    }
+    
+  } trackballs[3];
+  
   
   void setup() {
     ofBackground(0);
     ofSetFrameRate(60);
     ofEnableNormalizedTexCoords();
     image.load("moon.jpg");
-    
-    //configure or detect me
-    devices[0].id = 0;
-    devices[1].id = 0; //1;
-    devices[2].id = 0; //2;
   }
   
   void update() {
     for (int i=0; i<3; i++) {
-      devices[i].value.rotate(trackballOrientation, ofVec3f(0,0,1));
-      history[i].push_back(devices[i].value);
+      trackballs[i].update();
+      history[i].push_back(trackballs[i].value); //undo speed correction for draw
       if (history[i].size()>40) history[i].erase(history[i].begin());
-      devices[i].value *= 0;
+      trackballs[i].value *= 0;
+      globe.rotation *= trackballs[i].q;
     }
     
-    //globe.rotation *= ofQuaternion(-1, ofPoint(1,0,0));
+    if (mouseFrom.distance(mouseTo)>.001) {
+      ofPoint axis = mouseFrom.getCrossed(mouseTo);
+      globe.rotation = ofQuaternion(axis.x,axis.y,axis.z,mouseFrom.dot(mouseTo)); //absolute rotation
+    }
+ 
   }
   
   void draw() {
@@ -45,6 +91,26 @@ public:
     drawGlobe();
     drawTrackballs();
     drawArrowAnimation();
+    
+    ofSetColor(255);
+    ofSetupScreen();
+    ofDrawBitmapString("globalOrientation: " + ofToString(globalOrientation),50,50);
+    ofDrawBitmapString("localOrientation: " + ofToString(localOrientation),50,75);
+  }
+  
+  void keyPressed(int key) {
+    if (key=='x') swap(trackballs[0].order, trackballs[1].order);
+    if (key=='r') { //shift right
+      swap(trackballs[0].order, trackballs[2].order);
+      swap(trackballs[1].order, trackballs[2].order);
+      cout << trackballs[0].order << trackballs[1].order << trackballs[2].order << endl;
+    }
+    if (key=='[') globalOrientation--;
+    if (key==']') globalOrientation++;
+    
+    if (key==',') localOrientation--;
+    if (key=='.') localOrientation++;
+    
   }
   
 //  ofQuaternion axesToQuaternion(ofPoint items[]) { //vector<string> items) { //input 6 items
@@ -84,19 +150,31 @@ public:
   
   void drawGlobe() {
     ofPushMatrix();
+//    ofRotateZ(90); //tricky?
     applyRotation();
     ofFill();
     ofSetColor(255);
     image.bind();
     ofEnableDepthTest();
+    
     ofDrawSphere(scaler(globe.radius));
     ofDisableDepthTest();
     image.unbind();
     ofPopMatrix();
-  }
-  
-  void keyPressed(int key) {
-    ofSaveFrame();
+    
+    for (int i=0; i<3; i++) {
+      ofSetColor(255,255,0);
+      ofPushMatrix();
+      ofSetColor(ofColor::fromHsb(i/3.*255,255,255));
+      ofDrawSphere(trackballs[i].from * scaler(globe.radius+.1),5);
+      ofDrawLine(trackballs[i].from * scaler(globe.radius+.1), trackballs[i].to * scaler(globe.radius+.1));
+      ofPopMatrix();
+    }
+    
+    ofSetColor(255,255,0);
+    ofDrawSphere(mouseFrom * scaler(globe.radius),5);
+    ofDrawLine(mouseFrom * scaler(globe.radius), mouseTo * scaler(globe.radius));
+    
   }
   
   void drawTrackballs() {
@@ -104,13 +182,15 @@ public:
     for (int i=0; i<3; i++) {
       ofPushMatrix();
       ofPushStyle();
-      ofRotateZ(i/3.*360);
+      ofRotateZ(-i*120);
       ofTranslate(0,-scaler(globe.radius));
       ofSetColor(0);
       ofDrawEllipse(0,0,scaler(.3),scaler(.2));
       ofSetColor(255);
       ofFill();
       ofDrawCircle(0,0,scaler(.1/2));
+      ofSetColor(0);
+      ofDrawBitmapString(ofToString(trackballs[i].order),0,0);
       
       //trackball motion
       for (int j=0; j<history[i].size(); j++) {
@@ -122,7 +202,10 @@ public:
         float y = sin(angle)*d;
         ofSetColor(ofColor::fromHsb(i/3.*255,255,255,jj*255));
         ofSetLineWidth(3);
+        ofPushMatrix();
+        ofRotateZ(-90);
         ofDrawLine(0,0,x,y);
+        ofPopMatrix();
       }
       
       ofPopStyle();
@@ -154,16 +237,37 @@ public:
   }
   
   virtual void mouseMoved(int device, int axis, int delta) {
-    if (devices[0].id==device) devices[0].value[axis] += delta;
-    if (devices[1].id==device) devices[1].value[axis] += delta;
-    if (devices[2].id==device) devices[2].value[axis] += delta;
+    //cout << device << " " << axis << " " << delta << endl;
+    
+    //detect deviceIds
+    static vector<int> ids;
+    if (ids.size()<3 && !ofContains(ids, device)) {
+      trackballs[ids.size()].deviceId = device;
+      trackballs[ids.size()].order = ids.size();
+      ids.push_back(device);
+    }
+    
+    //cout << ids.size() << " " << ofFind(ids,device) << endl;
+    
+    if (trackballs[0].deviceId==device) trackballs[0].value[axis] += delta;
+    if (trackballs[1].deviceId==device) trackballs[1].value[axis] += delta;
+    if (trackballs[2].deviceId==device) trackballs[2].value[axis] += delta;
   }
   
+  void mousePressed(int x, int y, int button) {
+    mouseFrom = ofPoint(ofGetMouseX()/float(ofGetWidth()/2)-1,ofGetMouseY()/float(ofGetHeight()/2)-1);
+    mouseFrom = ofxMouseToSphere(mouseFrom);
+  }
+  
+  void mouseDragged(int x, int y, int button) {
+    mouseTo = ofPoint(ofGetMouseX()/float(ofGetWidth()/2)-1,ofGetMouseY()/float(ofGetHeight()/2)-1);
+    mouseTo = ofxMouseToSphere(mouseTo);
+  }
 };
 
 
 //========================================================================
 int main( ){
-	ofSetupOpenGL(1024,768,OF_WINDOW);			// <-------- setup the GL context
+	ofSetupOpenGL(768,768,OF_WINDOW);			// <-------- setup the GL context
 	ofRunApp(new ofApp());
 }
